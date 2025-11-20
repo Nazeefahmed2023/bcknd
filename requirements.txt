@@ -1,0 +1,16 @@
+redis
+django-redis
+python-dotenv
+djangorestframework-simplejwt
+
+Django
+djangorestframework
+djangorestframework-simplejwt
+django-cors-headers
+django-environ
+psycopg2-binary
+channels
+channels-redis
+django-elasticsearch-dsl
+kafka-python
+celery[redis]

@@ -1,0 +1,141 @@
+version: "3.8"
+
+services:
+  # ---------------------- ZOOKEEPER -----------------------
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.0
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+    ports:
+      - "2181:2181"
+
+  # ---------------------- KAFKA ----------------------------
+  kafka:
+    image: confluentinc/cp-kafka:7.6.0
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092,PLAINTEXT_HOST://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+
+  # ---------------------- KAFDROP ---------------------------
+  kafdrop:
+    image: obsidiandynamics/kafdrop:latest
+    depends_on:
+      - kafka
+    ports:
+      - "19000:9000"
+    environment:
+      KAFKA_BROKERCONNECT: "kafka:29092"
+
+  # ---------------------- REDIS -----------------------------
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+
+  # ---------------------- POSTGRES --------------------------
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: appuser
+      POSTGRES_PASSWORD: apassword
+      POSTGRES_DB: appdb
+    ports:
+      - "5432:5432"
+
+  # ---------------------- BACKEND (DJANGO) ------------------
+  backend:
+    build: ./backend
+    command: python manage.py runserver 0.0.0.0:8000
+    environment:
+      DATABASE_URL: postgres://appuser:apassword@postgres:5432/appdb
+      REDIS_URL: redis://redis:6379/0
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+    ports:
+      - "8000:8000"
+    depends_on:
+      - redis
+      - postgres
+      - kafka
+
+  # ---------------------- FRONTEND (NGINX) ------------------
+  nginx:
+    build: ./frontend
+    ports:
+      - "80:80"
+    volumes:
+      - ./infra/nginx.conf:/etc/nginx/conf.d/default.conf
+    depends_on:
+      - backend
+
+  # ---------------------- MONITORING ------------------------
+  prometheus:
+    image: prom/prometheus:latest
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/alert.rules.yml:/etc/prometheus/alert.rules.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    depends_on:
+      - backend
+
+  grafana:
+    image: grafana/grafana:9.0.0
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+
+  node_exporter:
+    image: prom/node-exporter:latest
+    ports:
+      - "9100:9100"
+    pid: "host"
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:latest
+    ports:
+      - "8080:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+
+  postgres_exporter:
+    image: prometheuscommunity/postgres-exporter
+    environment:
+      DATA_SOURCE_NAME: "postgresql://appuser:apassword@postgres:5432/appdb?sslmode=disable"
+    ports:
+      - "9187:9187"
+
+  redis_exporter:
+    image: oliver006/redis_exporter:latest
+    environment:
+      REDIS_ADDR: redis:6379
+    ports:
+      - "9121:9121"
+
+  kafka_exporter:
+    image: danielqsj/kafka-exporter
+    environment:
+      KAFKA_SERVER: kafka:29092
+    ports:
+      - "9308:9308"
+
+# ---------------------- VOLUMES ------------------------
+volumes:
+  prometheus_data:
+  grafana_data:

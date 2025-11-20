@@ -1,0 +1,28 @@
+groups:
+- name: ecom_alerts
+rules:
+- alert: HighCPUUsage
+expr: sum(rate(container_cpu_usage_seconds_total{image!=""}[2m])) > 0.8
+for: 2m
+labels:
+severity: critical
+annotations:
+summary: "High CPU usage"
+
+
+- alert: HighRequestLatency
+expr: histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[2m])) by (le)) > 0.5
+for: 2m
+labels:
+severity: warning
+annotations:
+summary: "High request latency"
+
+
+- alert: HighErrorRate
+expr: sum(rate(http_requests_total{status=~"5.."}[5m])) / sum(rate(http_requests_total[5m])) > 0.02
+for: 5m
+labels:
+severity: critical
+annotations:
+summary: "High 5xx error rate"
